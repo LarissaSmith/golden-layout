@@ -464,7 +464,6 @@ lm.LayoutManager = function( config, container ) {
 	this._resizeTimeoutId = null;
 	this._components = { 'lm-react-component': lm.utils.ReactComponentHandler };
 	this._itemAreas = [];
-	this._resizeFunction = lm.utils.fnBind( this._onResize, this );
 	this._unloadFunction = lm.utils.fnBind( this._onUnload, this );
 	this._maximisedItem = null;
 	this._maximisePlaceholder = $( '<div class="lm_maximise_place"></div>' );
@@ -714,29 +713,15 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 	 * Updates the layout managers size
 	 *
 	 * @public
-	 * @param   {[int]} width  height in pixels
-	 * @param   {[int]} height width in pixels
 	 *
 	 * @returns {void}
 	 */
-	updateSize: function( width, height ) {
-		if( arguments.length === 2 ) {
-			this.width = width;
-			this.height = height;
-		} else {
-			this.width = this.container.width();
-			this.height = this.container.height();
-		}
+	updateSize: function() {
+		this.width = this.container.width();
+		this.height = this.container.height();
 
 		if( this.isInitialised === true ) {
 			this.root.callDownwards( 'setSize', [ this.width, this.height ] );
-
-			if( this._maximisedItem ) {
-				this._maximisedItem.element.width( this.container.width() );
-				this._maximisedItem.element.height( this.container.height() );
-				this._maximisedItem.callDownwards( 'setSize' );
-			}
-
 			this._adjustColumnsResponsive();
 		}
 	},
@@ -753,7 +738,6 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 			return;
 		}
 		this._onUnload();
-		$( window ).off( 'resize', this._resizeFunction );
 		$( window ).off( 'unload beforeunload', this._unloadFunction );
 		this.root.callDownwards( '_$destroy', [], true );
 		this.root.contentItems = [];
@@ -988,8 +972,6 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 		contentItem.element.addClass( 'lm_maximised' );
 		contentItem.element.after( this._maximisePlaceholder );
 		this.root.element.prepend( contentItem.element );
-		contentItem.element.width( this.container.width() );
-		contentItem.element.height( this.container.height() );
 		contentItem.callDownwards( 'setSize' );
 		this._maximisedItem.emit( 'maximised' );
 		this.emit( 'stateChanged' );
@@ -1095,9 +1077,12 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 				this._itemAreas.push( area );
 				var header = {};
 				lm.utils.copy( header, area );
-				lm.utils.copy( header, area.contentItem._contentAreaDimensions.header.highlightArea );
-				header.surface = ( header.x2 - header.x1 ) * ( header.y2 - header.y1 );
-				this._itemAreas.push( header );
+				var dimsHeader = area.contentItem._contentAreaDimensions.header;
+				if (dimsHeader && dimsHeader.highlightArea) {
+					lm.utils.copy( header, dimsHeader.highlightArea );
+					header.surface = ( header.x2 - header.x1 ) * ( header.y2 - header.y1 );
+					this._itemAreas.push( header );
+				}
 			}
 		}
 	},
@@ -1200,22 +1185,7 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 	 * @returns {void}
 	 */
 	_bindEvents: function() {
-		if( this._isFullPage ) {
-			$( window ).resize( this._resizeFunction );
-		}
 		$( window ).on( 'unload beforeunload', this._unloadFunction );
-	},
-
-	/**
-	 * Debounces resize events
-	 *
-	 * @private
-	 *
-	 * @returns {void}
-	 */
-	_onResize: function() {
-		clearTimeout( this._resizeTimeoutId );
-		this._resizeTimeoutId = setTimeout( lm.utils.fnBind( this.updateSize, this ), 100 );
 	},
 
 	/**
@@ -1454,7 +1424,8 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 	 * @returns {bool} - True if responsive layout should be used; otherwise false.
 	 */
 	_useResponsiveLayout: function() {
-		return this.config.settings && ( this.config.settings.responsiveMode == 'always' || ( this.config.settings.responsiveMode == 'onload' && this._firstLoad ) );
+		return this.config.settings && this.config.settings.stackingEnabled !== false
+				&& ( this.config.settings.responsiveMode == 'always' || ( this.config.settings.responsiveMode == 'onload' && this._firstLoad ) );
 	},
 
 	/**
@@ -1537,6 +1508,7 @@ lm.config.defaultConfig = {
 		constrainDragToContainer: true,
 		reorderEnabled: true,
 		selectionEnabled: false,
+		stackingEnabled: true,
 		popoutWholeStack: false,
 		blockedPopoutsThrowError: true,
 		closePopoutsOnUnload: true,
@@ -1752,11 +1724,6 @@ lm.utils.copy( lm.container.ItemContainer.prototype, {
 		if( width !== this.width || height !== this.height ) {
 			this.width = width;
 			this.height = height;
-			var cl = this._contentElement[0];
-			var hdelta = cl.offsetWidth - cl.clientWidth;
-			var vdelta = cl.offsetHeight - cl.clientHeight;
-			this._contentElement.width( this.width-hdelta )
-			     .height( this.height-vdelta );
 			this.emit( 'resize' );
 		}
 	}
@@ -1860,7 +1827,19 @@ lm.utils.copy( lm.controls.BrowserPopout.prototype, {
 			 */
 			if( !parentItem ) {
 				if( this._layoutManager.root.contentItems.length > 0 ) {
-					parentItem = this._layoutManager.root.contentItems[ 0 ];
+					var topItem = this._layoutManager.root.contentItems[ 0 ];
+
+					/*
+					 * If the topmost item is a stack, and we can't add another item
+					 *  because stacking in it is disabled, put both items in a new row
+					 */
+					if ( topItem.type === "stack" && topItem._header && !topItem._header.isDropArea && topItem.contentItems.length > 0 ) {
+						parentItem = this._layoutManager.createContentItem({type: "row"});
+						this._layoutManager.root.replaceChild(topItem, parentItem);
+						parentItem.addChild(topItem);
+					} else {
+						parentItem = topItem;
+					}
 				} else {
 					parentItem = this._layoutManager.root;
 				}
@@ -1868,7 +1847,7 @@ lm.utils.copy( lm.controls.BrowserPopout.prototype, {
 			}
 		}
 
-		parentItem.addChild( childConfig, this._indexInParent );
+		parentItem.addChild( childConfig, index );
 		this.close();
 	},
 
@@ -2154,6 +2133,8 @@ lm.utils.copy( lm.controls.DragProxy.prototype, {
 	 */
 	_onDrop: function() {
 		this._layoutManager.dropTargetIndicator.hide();
+		this._contentItem.element.height("");
+		this._contentItem.element.width("");
 
 		/*
 		 * Valid drop area found
@@ -2345,6 +2326,7 @@ lm.controls.Header = function( layoutManager, parent ) {
 	this.tabs = [];
 	this.activeContentItem = null;
 	this.closeButton = null;
+	this.dockButton = null;
 	this.tabDropdownButton = null;
 	this.hideAdditionalTabsDropdown = lm.utils.fnBind(this._hideAdditionalTabsDropdown, this);
 	$( document ).mouseup(this.hideAdditionalTabsDropdown);
@@ -2469,6 +2451,8 @@ lm.utils.copy( lm.controls.Header.prototype, {
 	 */
 	position: function( position ) {
 		var previous = this.parent._header.show;
+		if( this.parent._docker && this.parent._docker.docked )
+			throw new Error( 'Can\'t change header position in docked stack' );
 		if( previous && !this.parent._side )
 			previous = 'top';
 		if( position !== undefined && this.parent._header.show != position ) {
@@ -2487,11 +2471,28 @@ lm.utils.copy( lm.controls.Header.prototype, {
 	 * @returns {Boolean} Whether the action was successful
 	 */
 	_$setClosable: function( isClosable ) {
+		this._canDestroy = isClosable || this.tabs.length > 1;
 		if( this.closeButton && this._isClosable() ) {
 			this.closeButton.element[ isClosable ? "show" : "hide" ]();
 			return true;
 		}
 
+		return false;
+	},
+
+	/**
+	 * Programmatically set ability to dock.
+	 *
+	 * @package private
+	 * @param {Boolean} isDockable Whether to enable/disable ability to dock.
+	 *
+	 * @returns {Boolean} Whether the action was successful
+	 */
+	_setDockable: function( isDockable ) {
+		if ( this.dockButton && this.parent._header && this.parent._header.dock ) {
+			this.dockButton.element.toggle( !!isDockable );
+			return true;
+		}
 		return false;
 	},
 
@@ -2544,6 +2545,12 @@ lm.utils.copy( lm.controls.Header.prototype, {
 		tabDropdownLabel = this.layoutManager.config.labels.tabDropdown;
 		this.tabDropdownButton = new lm.controls.HeaderButton( this, tabDropdownLabel, 'lm_tabdropdown', showTabDropdown );
 		this.tabDropdownButton.element.hide();
+
+		if( this.parent._header && this.parent._header.dock ) {
+			var button = lm.utils.fnBind( this.parent.dock, this.parent );
+			var label = this._getHeaderSetting( 'dock' );
+			this.dockButton = new lm.controls.HeaderButton( this, label, 'lm_dock', button );
+		}
 
 		/**
 		 * Popout control to launch component in new window.
@@ -2921,6 +2928,8 @@ lm.utils.copy( lm.controls.Tab.prototype, {
 	 * @returns {void}
 	 */
 	_onDragStart: function( x, y ) {
+		if( !this.header._canDestroy )
+			return null;
 		if( this.contentItem.parent.isMaximised === true ) {
 			this.contentItem.parent.toggleMaximise();
 		}
@@ -2967,6 +2976,8 @@ lm.utils.copy( lm.controls.Tab.prototype, {
 	 */
 	_onCloseClick: function( event ) {
 		event.stopPropagation();
+		if( !this.header._canDestroy )
+			return;
 		this.header.parent.removeChild( this.contentItem );
 	},
 
@@ -3783,20 +3794,7 @@ lm.utils.copy( lm.items.Root.prototype, {
 		this.emitBubblingEvent( 'stateChanged' );
 	},
 
-	setSize: function( width, height ) {
-		width = (typeof width === 'undefined') ? this._containerElement.width() : width;
-		height = (typeof height === 'undefined') ? this._containerElement.height() : height;
-
-		this.element.width( width );
-		this.element.height( height );
-
-		/*
-		 * Root can be empty
-		 */
-		if( this.contentItems[ 0 ] ) {
-			this.contentItems[ 0 ].element.width( width );
-			this.contentItems[ 0 ].element.height( height );
-		}
+	setSize: function() {
 	},
 	_$highlightDropZone: function( x, y, area ) {
 		this.layoutManager.tabDropPlaceholder.remove();
@@ -3872,19 +3870,18 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	 * @param {lm.item.AbstractContentItem} contentItem
 	 * @param {[int]} index The position of the new item within the Row or Column.
 	 *                      If no index is provided the item will be added to the end
-	 * @param {[bool]} _$suspendResize If true the items won't be resized. This will leave the item in
-	 *                                 an inconsistent state and is only intended to be used if multiple
-	 *                                 children need to be added in one go and resize is called afterwards
 	 *
 	 * @returns {void}
 	 */
-	addChild: function( contentItem, index, _$suspendResize ) {
+	addChild: function( contentItem, index ) {
 
-		var newItemSize, itemSize, i, splitterElement;
+		var splitterElement;
 
 		contentItem = this.layoutManager._$normalizeContentItem( contentItem, this );
 
 		if( index === undefined ) {
+			index = this.contentItems.length;
+		} else if (index > this.contentItems.length) {
 			index = this.contentItems.length;
 		}
 
@@ -3894,6 +3891,10 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 			if( index > 0 ) {
 				this.contentItems[ index - 1 ].element.after( splitterElement );
 				splitterElement.after( contentItem.element );
+				if ( this._isDocked( index - 1 ) ) {
+					this._splitter[ index - 1 ].element.hide();
+					this._splitter[ index ].element.show();
+				}
 			} else {
 				this.contentItems[ 0 ].element.before( splitterElement );
 				splitterElement.before( contentItem.element );
@@ -3904,24 +3905,8 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 
 		lm.items.AbstractContentItem.prototype.addChild.call( this, contentItem, index );
 
-		newItemSize = ( 1 / this.contentItems.length ) * 100;
-
-		if( _$suspendResize === true ) {
-			this.emitBubblingEvent( 'stateChanged' );
-			return;
-		}
-
-		for( i = 0; i < this.contentItems.length; i++ ) {
-			if( this.contentItems[ i ] === contentItem ) {
-				contentItem.config[ this._dimension ] = newItemSize;
-			} else {
-				itemSize = this.contentItems[ i ].config[ this._dimension ] *= ( 100 - newItemSize ) / 100;
-				this.contentItems[ i ].config[ this._dimension ] = itemSize;
-			}
-		}
-
 		this.callDownwards( 'setSize' );
-		this.emitBubblingEvent( 'stateChanged' );
+		this._validateDocking();
 	},
 
 	/**
@@ -3952,12 +3937,18 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 			this._splitter.splice( splitterIndex, 1 );
 		}
 
+		if( splitterIndex < this._splitter.length ) {
+			if ( this._isDocked( splitterIndex ) )
+				this._splitter[ splitterIndex ].element.hide();
+		}
 		/**
 		 * Allocate the space that the removed item occupied to the remaining items
 		 */
+		var docked = this._isDocked();
 		for( i = 0; i < this.contentItems.length; i++ ) {
 			if( this.contentItems[ i ] !== contentItem ) {
-				this.contentItems[ i ].config[ this._dimension ] += removedItemSize / ( this.contentItems.length - 1 );
+				if ( !this._isDocked( i ) )
+					this.contentItems[ i ].config[ this._dimension ] += removedItemSize / ( this.contentItems.length - 1 - docked );
 			}
 		}
 
@@ -3967,9 +3958,11 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 			childItem = this.contentItems[ 0 ];
 			this.contentItems = [];
 			this.parent.replaceChild( this, childItem, true );
+			this._validateDocking( this.parent );
 		} else {
 			this.callDownwards( 'setSize' );
 			this.emitBubblingEvent( 'stateChanged' );
+			this._validateDocking();
 		}
 	},
 
@@ -3990,6 +3983,28 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	},
 
 	/**
+	 * Sets config setting which allows the flex-direction to be set to reverse.
+	 *
+	 * @param   {boolean} reverse
+	 * @param   {boolean} force - set the css regardless of the previous value
+	 *
+	 * @returns {void}
+	 */
+	setReverse: function(reverse, force) {
+		if (this.config.reverse != reverse || force) {
+			this.config.reverse = reverse;
+
+			if (reverse) {
+				this.element.addClass( 'lm_reversed' );
+			} else {
+				this.element.removeClass( 'lm_reversed' );
+			}
+
+			this.emitBubblingEvent( 'stateChanged' );
+		}
+	},
+
+	/**
 	 * Called whenever the dimensions of this item or one of its parents change
 	 *
 	 * @returns {void}
@@ -4002,7 +4017,77 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 		this.emitBubblingEvent( 'stateChanged' );
 		this.emit( 'resize' );
 	},
+	/**
+	 * Dock or undock a child if it posiible
+	 *
+	 * @param   {lm.items.AbstractContentItem} contentItem
+	 * @param   {Boolean} mode or toggle if undefined
+	 * @param   {Boolean} collapsed after docking
+	 *
+	 * @returns {void}
+	 */
+	dock: function( contentItem, mode, collapsed ) {
+		if( this.contentItems.length === 1 )
+			throw new Error( 'Can\'t dock child when it single' );
 
+		var removedItemSize = contentItem.config[ this._dimension ] ,
+			headerSize = this.layoutManager.config.dimensions.headerHeight,
+			index = lm.utils.indexOf( contentItem, this.contentItems ),
+			splitterIndex = Math.max( index - 1, 0 );
+
+		if( index === -1 ) {
+			throw new Error( 'Can\'t dock child. ContentItem is not child of this Row or Column' );
+		}
+		var isDocked = contentItem._docker && contentItem._docker.docked;
+		if ( typeof mode != 'undefined' )
+			if ( mode == isDocked )
+				return;
+		if( isDocked ) { // undock it
+			this._splitter[ splitterIndex ].element.show();
+			for(var i = 0; i < this.contentItems.length; i++ ) {
+				var newItemSize = contentItem._docker.size;
+				if( this.contentItems[ i ] === contentItem ) {
+					contentItem.config[ this._dimension ] = newItemSize;
+				} else {
+					itemSize = this.contentItems[ i ].config[ this._dimension ] *= ( 100 - newItemSize ) / 100;
+					this.contentItems[ i ].config[ this._dimension ] = itemSize;
+				}
+			}
+			contentItem._docker = { docked: false };
+		} else { // dock
+			if( this.contentItems.length - this._isDocked() < 2 )
+				throw new Error( 'Can\'t dock child when it is last in ' + this.config.type );
+			var autoside = { column: { first: 'top', last: 'bottom' }, row: { first: 'left', last: 'right' } };
+			var required = autoside[ this.config.type ][ index ? 'last' : 'first' ];
+			if( contentItem.header.position() != required )
+				contentItem.header.position( required );
+
+			if( this._splitter[ splitterIndex ] ) {
+				this._splitter[ splitterIndex ].element.hide();
+			}
+			var docked = this._isDocked();
+			for(var i = 0; i < this.contentItems.length; i++ ) {
+				if( this.contentItems[ i ] !== contentItem ) {
+					if ( !this._isDocked( i ) )
+						this.contentItems[ i ].config[ this._dimension ] += removedItemSize / ( this.contentItems.length - 1 - docked );
+				}else
+					this.contentItems[ i ].config[ this._dimension ] = 0;
+			}
+			contentItem._docker = {
+				dimension: this._dimension,
+				size: removedItemSize,
+				realSize: contentItem.element[ this._dimension ]() - headerSize,
+				docked: true,
+			};
+			if( collapsed )
+				contentItem.childElementContainer[ this._dimension ] ( 0 );
+		}
+		contentItem.element.toggleClass( 'lm_docked', contentItem._docker.docked );
+		this.callDownwards( 'setSize' );
+		this.emitBubblingEvent( 'stateChanged' );
+		this._validateDocking();
+	},
+	
 	/**
 	 * Invoked recursively by the layout manager. AbstractContentItem.init appends
 	 * the contentItem's DOM elements to the container, RowOrColumn init adds splitters
@@ -4018,9 +4103,14 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 		var i;
 
 		lm.items.AbstractContentItem.prototype._$init.call( this );
+		this.setReverse(this.config.reverse || false, true);
 
 		for( i = 0; i < this.contentItems.length - 1; i++ ) {
 			this.contentItems[ i ].element.after( this._createSplitter( i ).element );
+		}
+		for( i = 0; i < this.contentItems.length; i++ ) {
+			if( this.contentItems[ i ]._header && this.contentItems[ i ]._header.docked )
+				this.dock( this.contentItems[ i ], true, true );
 		}
 	},
 
@@ -4042,13 +4132,7 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 				sizeData.itemSizes[ i ]++;
 			}
 
-			if( this._isColumn ) {
-				this.contentItems[ i ].element.width( sizeData.totalWidth );
-				this.contentItems[ i ].element.height( sizeData.itemSizes[ i ] );
-			} else {
-				this.contentItems[ i ].element.width( sizeData.itemSizes[ i ] );
-				this.contentItems[ i ].element.height( sizeData.totalHeight );
-			}
+            this.contentItems[ i ].element.css("flex", sizeData.itemSizes[ i ] );
 		}
 	},
 
@@ -4059,6 +4143,7 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	_calculateAbsoluteSizes: function() {
 		var i,
 			totalSplitterSize = (this.contentItems.length - 1) * this._splitterSize,
+  		headerSize = this.layoutManager.config.dimensions.headerHeight,
 			totalWidth = this.element.width(),
 			totalHeight = this.element.height(),
 			totalAssigned = 0,
@@ -4071,13 +4156,23 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 		} else {
 			totalWidth -= totalSplitterSize;
 		}
-
+		for( i = 0; i < this.contentItems.length; i++ ) {
+			if( this._isDocked( i ) )
+				if( this._isColumn ) {
+					totalHeight -= headerSize - this._splitterSize;
+				} else {
+					totalWidth -= headerSize - this._splitterSize;
+				}
+		}
+	
 		for( i = 0; i < this.contentItems.length; i++ ) {
 			if( this._isColumn ) {
 				itemSize = Math.floor( totalHeight * ( this.contentItems[ i ].config.height / 100 ) );
 			} else {
 				itemSize = Math.floor( totalWidth * (this.contentItems[ i ].config.width / 100) );
 			}
+			if( this._isDocked( i ) )
+				itemSize = headerSize;
 
 			totalAssigned += itemSize;
 			itemSizes.push( itemSize );
@@ -4284,10 +4379,46 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	_getItemsForSplitter: function( splitter ) {
 		var index = lm.utils.indexOf( splitter, this._splitter );
 
+		if (this.config.reverse) {
+            return {
+                before: this.contentItems[ index + 1 ],
+                after: this.contentItems[ index ]
+            };
+		}
 		return {
 			before: this.contentItems[ index ],
 			after: this.contentItems[ index + 1 ]
 		};
+	},
+
+	/**
+	 * Gets docking information
+	 * @private
+	 */
+	_isDocked: function ( index ) {
+		if ( typeof index == 'undefined' ) {
+			var count = 0;
+			for (var i = 0; i < this.contentItems.length; ++i)
+				if ( this._isDocked( i ) )
+					count++;
+			return count;
+		}
+		if ( index < this.contentItems.length )
+			return this.contentItems[ index ]._docker && this.contentItems[ index ]._docker.docked;
+	},
+
+	/**
+	 * Validate if row or column has ability to dock
+	 * @private
+	 */
+	_validateDocking: function ( that ) {
+		that = that || this;
+		var can = that.contentItems.length - that._isDocked() > 1;
+		for (var i = 0; i < that.contentItems.length; ++i )
+			if ( that.contentItems[ i ] instanceof lm.items.Stack ) {
+				that.contentItems[ i ].header._setDockable( that._isDocked( i ) || can );
+				that.contentItems[ i ].header._$setClosable( can );
+			}
 	},
 
 	/**
@@ -4385,6 +4516,7 @@ lm.items.Stack = function( layoutManager, config, parent ) {
 	var cfg = layoutManager.config;
 	this._header = { // defaults' reconstruction from old configuration style
 		show: cfg.settings.hasHeaders === true && config.hasHeaders !== false,
+		isDropArea: cfg.settings.stackingEnabled === true && config.stackingEnabled !== false,
 		popout: cfg.settings.showPopoutIcon && cfg.labels.popout,
 		maximise: cfg.settings.showMaximiseIcon && cfg.labels.maximise,
 		close: cfg.settings.showCloseIcon && cfg.labels.close,
@@ -4407,6 +4539,10 @@ lm.items.Stack = function( layoutManager, config, parent ) {
 	this.childElementContainer = $( '<div class="lm_items"></div>' );
 	this.header = new lm.controls.Header( layoutManager, this );
 
+	this.element.on( 'mouseleave mouseenter', lm.utils.fnBind( function ( event ) {
+		if ( this._docker && this._docker.docked )
+			this.childElementContainer[ this._docker.dimension ] ( event.type == 'mouseenter' ? this._docker.realSize : 0 );
+	},this ) );
 	this.element.append( this.header.element );
 	this.element.append( this.childElementContainer );
 	this._setupHeaderPosition();
@@ -4417,20 +4553,12 @@ lm.utils.extend( lm.items.Stack, lm.items.AbstractContentItem );
 
 lm.utils.copy( lm.items.Stack.prototype, {
 
+	dock: function(mode) {
+		if( this._header.dock )
+			if( this.parent instanceof lm.items.RowOrColumn )
+				this.parent.dock( this, mode );
+	},
 	setSize: function() {
-		var i,
-			headerSize = this._header.show ? this.layoutManager.config.dimensions.headerHeight : 0,
-			contentWidth = this.element.width() - (this._sided ? headerSize : 0),
-			contentHeight = this.element.height() - (!this._sided ? headerSize : 0);
-
-		this.childElementContainer.width( contentWidth );
-		this.childElementContainer.height( contentHeight );
-
-		for( i = 0; i < this.contentItems.length; i++ ) {
-			this.contentItems[ i ].element.width( contentWidth ).height( contentHeight );
-		}
-		this.emit( 'resize' );
-		this.emitBubblingEvent( 'stateChanged' );
 	},
 
 	_$init: function() {
@@ -4485,6 +4613,8 @@ lm.utils.copy( lm.items.Stack.prototype, {
 		this.setActiveContentItem( contentItem );
 		this.callDownwards( 'setSize' );
 		this._$validateClosability();
+		if( this.parent instanceof lm.items.RowOrColumn )
+			this.parent._validateDocking();
 		this.emitBubblingEvent( 'stateChanged' );
 	},
 
@@ -4501,6 +4631,8 @@ lm.utils.copy( lm.items.Stack.prototype, {
 		}
 
 		this._$validateClosability();
+		if( this.parent instanceof lm.items.RowOrColumn )
+			this.parent._validateDocking();
 		this.emitBubblingEvent( 'stateChanged' );
 	},
 
@@ -4533,6 +4665,7 @@ lm.utils.copy( lm.items.Stack.prototype, {
 	_$destroy: function() {
 		lm.items.AbstractContentItem.prototype._$destroy.call( this );
 		this.header._$destroy();
+		this.element.off( 'mouseenter mouseleave' );
 	},
 
 
@@ -4630,6 +4763,7 @@ lm.utils.copy( lm.items.Stack.prototype, {
 			contentItem.config[ dimension ] = 50;
 			rowOrColumn.callDownwards( 'setSize' );
 		}
+		this.parent._validateDocking();
 	},
 
 	/**
@@ -4668,13 +4802,15 @@ lm.utils.copy( lm.items.Stack.prototype, {
 		}
 
 		var getArea = lm.items.AbstractContentItem.prototype._$getArea,
-			headerArea = getArea.call( this, this.header.element ),
 			contentArea = getArea.call( this, this.childElementContainer ),
 			contentWidth = contentArea.x2 - contentArea.x1,
-			contentHeight = contentArea.y2 - contentArea.y1;
+			contentHeight = contentArea.y2 - contentArea.y1,
+			headerArea = null;
 
-		this._contentAreaDimensions = {
-			header: {
+		this._contentAreaDimensions = {};
+		if (this._header.isDropArea) {
+			headerArea = getArea.call( this, this.header.element );
+			this._contentAreaDimensions.header = {
 				hoverArea: {
 					x1: headerArea.x1,
 					y1: headerArea.y1,
@@ -4687,8 +4823,8 @@ lm.utils.copy( lm.items.Stack.prototype, {
 					x2: headerArea.x2,
 					y2: headerArea.y2
 				}
-			}
-		};
+			};
+		}
 
 		/**
 		 * If this Stack is a parent to rows, columns or other stacks only its
@@ -4869,6 +5005,11 @@ lm.utils.copy( lm.items.Stack.prototype, {
 		this.layoutManager.tabDropPlaceholder.remove();
 	},
 
+	toggleMaximise: function( e ) {
+		if( !this.isMaximised )
+			this.dock( false );
+		lm.items.AbstractContentItem.prototype.toggleMaximise.call( this, e );
+	},
 	_setupHeaderPosition: function() {
 		var side = [ 'right', 'left', 'bottom' ].indexOf( this._header.show ) >= 0 && this._header.show;
 		this.header.element.toggle( !!this._header.show );
