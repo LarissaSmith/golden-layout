@@ -183,8 +183,6 @@ lm.utils.copy( lm.container.ItemContainer.prototype, {
 		if( width !== this.width || height !== this.height ) {
 			this.width = width;
 			this.height = height;
-			this._contentElement.outerWidth( width )
-			     .outerHeight( height );
 			this.emit( 'resize' );
 		}
 	}

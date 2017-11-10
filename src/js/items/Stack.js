@@ -48,24 +48,6 @@ lm.utils.copy( lm.items.Stack.prototype, {
 				this.parent.dock( this, mode );
 	},
 	setSize: function() {
-		if ( !this.element.is( ':visible' ) ) return;
-		var isDocked = this._docker && this._docker.docked,
-			content = { width: this.element.width(), height: this.element.height() };
-
-		if( this._header.show )
-			content[ this._sided ? 'width' : 'height' ] -= this.layoutManager.config.dimensions.headerHeight;
-		if( isDocked )
-			content[ this._docker.dimension ] = this._docker.realSize;
-		if( !isDocked || this._docker.dimension == 'height' )
-			this.childElementContainer.width( content.width );
-		if( !isDocked || this._docker.dimension == 'width' )
-			this.childElementContainer.height( content.height );
-
-		for(var i = 0; i < this.contentItems.length; i++ ) {
-			this.contentItems[ i ].element.width( content.width ).height( content.height );
-		}
-		this.emit( 'resize' );
-		this.emitBubblingEvent( 'stateChanged' );
 	},
 
 	_$init: function() {

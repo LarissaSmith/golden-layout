@@ -18,16 +18,51 @@
 
 .lm_root {
   position: relative;
+  width: 100%;
+  height: 100%;
 }
 
-.lm_row > .lm_item {
-  float: left;
+.lm_row {
+  display: flex;
+  flex: 1;
+}
+
+.lm_column {
+  display: flex;
+  flex-direction: column;
+}
+
+.lm_stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.lm_items {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.lm_root > .lm_row,
+.lm_root > .lm_column,
+.lm_items {
+  height: 100%;
+}
+
+.lm_item_container {
+  position: relative;
+  flex: 1;
 }
 
 // Single Pane content (area in which final dragged content is contained)
 .lm_content {
   overflow: hidden;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
 }
 
 // ".lm_dragging" is applied to BODY tag during Drag and is also directly applied to the root of the object being dragged
@@ -39,10 +74,12 @@
 
 // If a specific Pane is maximized
 .lm_maximised {
-  position: absolute;
+  position: absolute !important;
   top: 0;
   left: 0;
   z-index: 40;
+  width: 100%;
+  height: 100%;
 }
 
 .lm_maximise_placeholder {
@@ -69,7 +106,6 @@
 
   &.lm_horizontal {
     float: left;
-    height: @height0;
 
     .lm_drag_handle {
       height: @height0;

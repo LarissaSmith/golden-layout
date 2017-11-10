@@ -130,6 +130,8 @@ lm.utils.copy( lm.controls.DragProxy.prototype, {
 	 */
 	_onDrop: function() {
 		this._layoutManager.dropTargetIndicator.hide();
+		this._contentItem.element.height("");
+		this._contentItem.element.width("");
 
 		/*
 		 * Valid drop area found

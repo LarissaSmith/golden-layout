@@ -23,7 +23,6 @@ lm.LayoutManager = function( config, container ) {
 	this._resizeTimeoutId = null;
 	this._components = { 'lm-react-component': lm.utils.ReactComponentHandler };
 	this._itemAreas = [];
-	this._resizeFunction = lm.utils.fnBind( this._onResize, this );
 	this._unloadFunction = lm.utils.fnBind( this._onUnload, this );
 	this._maximisedItem = null;
 	this._maximisePlaceholder = $( '<div class="lm_maximise_place"></div>' );
@@ -273,29 +272,15 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 	 * Updates the layout managers size
 	 *
 	 * @public
-	 * @param   {[int]} width  height in pixels
-	 * @param   {[int]} height width in pixels
 	 *
 	 * @returns {void}
 	 */
-	updateSize: function( width, height ) {
-		if( arguments.length === 2 ) {
-			this.width = width;
-			this.height = height;
-		} else {
-			this.width = this.container.width();
-			this.height = this.container.height();
-		}
+	updateSize: function() {
+		this.width = this.container.width();
+		this.height = this.container.height();
 
 		if( this.isInitialised === true ) {
 			this.root.callDownwards( 'setSize', [ this.width, this.height ] );
-
-			if( this._maximisedItem ) {
-				this._maximisedItem.element.width( this.container.width() );
-				this._maximisedItem.element.height( this.container.height() );
-				this._maximisedItem.callDownwards( 'setSize' );
-			}
-
 			this._adjustColumnsResponsive();
 		}
 	},
@@ -312,7 +297,6 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 			return;
 		}
 		this._onUnload();
-		$( window ).off( 'resize', this._resizeFunction );
 		$( window ).off( 'unload beforeunload', this._unloadFunction );
 		this.root.callDownwards( '_$destroy', [], true );
 		this.root.contentItems = [];
@@ -547,8 +531,6 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 		contentItem.element.addClass( 'lm_maximised' );
 		contentItem.element.after( this._maximisePlaceholder );
 		this.root.element.prepend( contentItem.element );
-		contentItem.element.width( this.container.width() );
-		contentItem.element.height( this.container.height() );
 		contentItem.callDownwards( 'setSize' );
 		this._maximisedItem.emit( 'maximised' );
 		this.emit( 'stateChanged' );
@@ -759,22 +741,7 @@ lm.utils.copy( lm.LayoutManager.prototype, {
 	 * @returns {void}
 	 */
 	_bindEvents: function() {
-		if( this._isFullPage ) {
-			$( window ).resize( this._resizeFunction );
-		}
 		$( window ).on( 'unload beforeunload', this._unloadFunction );
-	},
-
-	/**
-	 * Debounces resize events
-	 *
-	 * @private
-	 *
-	 * @returns {void}
-	 */
-	_onResize: function() {
-		clearTimeout( this._resizeTimeoutId );
-		this._resizeTimeoutId = setTimeout( lm.utils.fnBind( this.updateSize, this ), 100 );
 	},
 
 	/**

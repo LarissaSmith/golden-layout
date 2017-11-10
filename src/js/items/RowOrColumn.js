@@ -26,15 +26,12 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	 * @param {lm.item.AbstractContentItem} contentItem
 	 * @param {[int]} index The position of the new item within the Row or Column.
 	 *                      If no index is provided the item will be added to the end
-	 * @param {[bool]} _$suspendResize If true the items won't be resized. This will leave the item in
-	 *                                 an inconsistent state and is only intended to be used if multiple
-	 *                                 children need to be added in one go and resize is called afterwards
 	 *
 	 * @returns {void}
 	 */
-	addChild: function( contentItem, index, _$suspendResize ) {
+	addChild: function( contentItem, index ) {
 
-		var newItemSize, itemSize, i, splitterElement;
+		var splitterElement;
 
 		contentItem = this.layoutManager._$normalizeContentItem( contentItem, this );
 
@@ -62,24 +59,7 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 
 		lm.items.AbstractContentItem.prototype.addChild.call( this, contentItem, index );
 
-		newItemSize = ( 1 / this.contentItems.length ) * 100;
-
-		if( _$suspendResize === true ) {
-			this.emitBubblingEvent( 'stateChanged' );
-			return;
-		}
-
-		for( i = 0; i < this.contentItems.length; i++ ) {
-			if( this.contentItems[ i ] === contentItem ) {
-				contentItem.config[ this._dimension ] = newItemSize;
-			} else {
-				itemSize = this.contentItems[ i ].config[ this._dimension ] *= ( 100 - newItemSize ) / 100;
-				this.contentItems[ i ].config[ this._dimension ] = itemSize;
-			}
-		}
-
 		this.callDownwards( 'setSize' );
-		this.emitBubblingEvent( 'stateChanged' );
 		this._validateDocking();
 	},
 
@@ -283,13 +263,7 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 				sizeData.itemSizes[ i ]++;
 			}
 
-			if( this._isColumn ) {
-				this.contentItems[ i ].element.width( sizeData.totalWidth );
-				this.contentItems[ i ].element.height( sizeData.itemSizes[ i ] );
-			} else {
-				this.contentItems[ i ].element.width( sizeData.itemSizes[ i ] );
-				this.contentItems[ i ].element.height( sizeData.totalHeight );
-			}
+            this.contentItems[ i ].element.css("flex", sizeData.itemSizes[ i ] );
 		}
 	},
 

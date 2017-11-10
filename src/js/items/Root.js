@@ -24,20 +24,7 @@ lm.utils.copy( lm.items.Root.prototype, {
 		this.emitBubblingEvent( 'stateChanged' );
 	},
 
-	setSize: function( width, height ) {
-		width = (typeof width === 'undefined') ? this._containerElement.width() : width;
-		height = (typeof height === 'undefined') ? this._containerElement.height() : height;
-
-		this.element.width( width );
-		this.element.height( height );
-
-		/*
-		 * Root can be empty
-		 */
-		if( this.contentItems[ 0 ] ) {
-			this.contentItems[ 0 ].element.width( width );
-			this.contentItems[ 0 ].element.height( height );
-		}
+	setSize: function() {
 	},
 	_$highlightDropZone: function( x, y, area ) {
 		this.layoutManager.tabDropPlaceholder.remove();
