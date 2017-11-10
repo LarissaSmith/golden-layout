@@ -137,6 +137,28 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	},
 
 	/**
+	 * Sets config setting which allows the flex-direction to be set to reverse.
+	 *
+	 * @param   {boolean} reverse
+	 * @param   {boolean} force - set the css regardless of the previous value
+	 *
+	 * @returns {void}
+	 */
+	setReverse: function(reverse, force) {
+		if (this.config.reverse != reverse || force) {
+			this.config.reverse = reverse;
+
+			if (reverse) {
+				this.element.addClass( 'lm_reversed' );
+			} else {
+				this.element.removeClass( 'lm_reversed' );
+			}
+
+			this.emitBubblingEvent( 'stateChanged' );
+		}
+	},
+
+	/**
 	 * Called whenever the dimensions of this item or one of its parents change
 	 *
 	 * @returns {void}
@@ -235,6 +257,7 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 		var i;
 
 		lm.items.AbstractContentItem.prototype._$init.call( this );
+		this.setReverse(this.config.reverse || false, true);
 
 		for( i = 0; i < this.contentItems.length - 1; i++ ) {
 			this.contentItems[ i ].element.after( this._createSplitter( i ).element );
@@ -510,6 +533,12 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	_getItemsForSplitter: function( splitter ) {
 		var index = lm.utils.indexOf( splitter, this._splitter );
 
+		if (this.config.reverse) {
+            return {
+                before: this.contentItems[ index + 1 ],
+                after: this.contentItems[ index ]
+            };
+		}
 		return {
 			before: this.contentItems[ index ],
 			after: this.contentItems[ index + 1 ]
