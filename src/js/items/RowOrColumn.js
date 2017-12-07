@@ -168,7 +168,7 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	setSize: function() {
 		if( this.contentItems.length > 0 ) {
 			this._calculateRelativeSizes();
-			this._setAbsoluteSizes();
+			this._setRelativeSizes();
 		}
 		this.emitBubblingEvent( 'stateChanged' );
 		this.emit( 'resize' );
@@ -271,24 +271,18 @@ lm.utils.copy( lm.items.RowOrColumn.prototype, {
 	},
 
 	/**
-	 * Turns the relative sizes calculated by _calculateRelativeSizes into
-	 * absolute pixel values and applies them to the children's DOM elements
-	 *
-	 * Assigns additional pixels to counteract Math.floor
+	 * Assigns the relative sizes calculated by _calculateRelativeSizes to the
+	 * children's DOM elements with css flex.
 	 *
 	 * @private
 	 * @returns {void}
 	 */
-	_setAbsoluteSizes: function() {
+	_setRelativeSizes: function() {
 		var i,
-			sizeData = this._calculateAbsoluteSizes();
+			dimension = this.isColumn ? "height" : "width";
 
 		for( i = 0; i < this.contentItems.length; i++ ) {
-			if( sizeData.additionalPixel - i > 0 ) {
-				sizeData.itemSizes[ i ]++;
-			}
-
-            this.contentItems[ i ].element.css("flex", sizeData.itemSizes[ i ] );
+			this.contentItems[ i ].element.css("flex", Math.floor(this.contentItems[ i ].config[ dimension ]) + "%" );
 		}
 	},
 

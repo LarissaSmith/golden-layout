@@ -10,6 +10,18 @@ Add `golden-layout` to your bower.json, or [download](https://golden-layout.com/
 
 ## Features
 
+Note: this branch has been modified from the base branch with the following features
+disableStacking on individual items (Hopefully to be accepted soon)
+Use flexbox instead of pixel sizes to cut down on javascript (Hopefully to be accepted eventually)
+Adds feature to reverse a row or column in the config.
+
+Not all of golden layout's features have been fully tested with flexbox.
+Features for docking and maximizing panels could use more testing
+Removing the event listener on window resize means that the _respectMinWidth doesn't run
+on resize. That should be addressed before flexbox can be accepted to the base branch.
+It would be nice to respect min height in that function as well.
+It was necessary to add absolute positioning to a div to make it work in IOS Safari
+
 * Native popup windows
 * Completely themeable
 * Comprehensive API
